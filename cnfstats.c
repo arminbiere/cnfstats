@@ -17,11 +17,12 @@ static void die(const char *msg, ...) {
   exit(1);
 }
 
-static long lineno;
+static long lineno = 0;
 static const char *name;
 
 static void err(const char *msg, ...) {
-  fprintf(stderr, "cnfstats: parse error: at line %ld in '%s': ", lineno, name);
+  fprintf(stderr, "cnfstats: parse error: at line %ld in '%s': ", lineno + 1,
+	  name);
   va_list ap;
   va_start(ap, msg);
   vfprintf(stderr, msg, ap);
@@ -33,7 +34,7 @@ static void err(const char *msg, ...) {
 static FILE *file;
 static long bytes;
 
-static int next() {
+static int next_char() {
   int res = getc(file);
   if (res == '\r') {
     res = getc(file);
@@ -48,16 +49,16 @@ static int next() {
   return res;
 }
 
-static bool read(int *res_ptr) {
+static bool next_int(int *res_ptr) {
   int ch;
-  while ((ch = next()) == ' ' || ch == '\t' || ch == '\n')
+  while ((ch = next_char()) == ' ' || ch == '\t' || ch == '\n')
     ;
   if (ch == EOF)
     return false;
   int sign;
   if (ch == '-') {
     sign = -1;
-    if (!isdigit(ch = next()))
+    if (!isdigit(ch = next_char()))
       err("expected digit after '-'");
     ;
   } else {
@@ -67,7 +68,7 @@ static bool read(int *res_ptr) {
     ;
   }
   int res = ch - '0';
-  while (isdigit(ch = next())) {
+  while (isdigit(ch = next_char())) {
     if (INT_MAX / 10 < res)
       err("number too large");
     res *= 10;
@@ -89,7 +90,7 @@ static long literals;
 static long *occurrences;
 
 static void msg(const char *msg, ...) {
-  fputs("cnfstats: ", stdout);
+  fputs("cnfstats ", stdout);
   va_list ap;
   va_start(ap, msg);
   vprintf(msg, ap);
@@ -100,8 +101,8 @@ static void msg(const char *msg, ...) {
 
 static double average(double a, double b) { return b ? a / b : 0; }
 
-
 int main(int argc, char **argv) {
+  msg ("version 0.0");
   for (int i = 1; i != argc; i++) {
     const char *arg = argv[i];
     if (!strcmp(arg, "-h")) {
@@ -118,61 +119,59 @@ int main(int argc, char **argv) {
   if (!name)
     file = stdin, name = "<stdin>";
   else if (!(file = fopen(name, "r")))
-    die("could not open and read '%s'", name);
+    die("could not open and next_int '%s'", name);
   else
     close_file = true;
-  msg("parsing '%s'", name);
-  int ch = next();
+  msg("cnf %s", name);
+  int ch = next_char();
   while (ch == 'c') {
-    while ((ch = next()) != '\n')
+    while ((ch = next_char()) != '\n')
       if (ch == EOF)
 	err("unexpected end-of-line in comment");
-    ch = next();
+    ch = next_char();
   }
-  for (const char *p = "p cnf "; *p; p++, ch = next())
-    if (*p != ch)
-      err("invalid header");
-  if (!read(&variables))
+  if (ch != 'p' || next_char() != ' ' || next_char() != 'c' ||
+      next_char() != 'n' || next_char() != 'f' || next_char() != ' ')
+    err("invalid header");
+  if (!next_int(&variables))
     err("could not parse number of variables in header");
   if (variables < 0)
     err("found negative number of variables in header");
-  if (!read(&clauses))
+  msg("variables %d", variables);
+  if (!next_int(&clauses))
     err("could not parse number of clauses in header");
   if (clauses < 0)
     err("found negative number of clauses in header");
-  while (ch == ' ')
-    ch = next();
-  if (ch != '\n')
-    die("expected new line after header");
-  msg("parsed header 'p cnf %ld %ld'", variables, clauses);
+  msg("clauses %d", clauses);
+  msg("clause-variable-ratio %.3f", average(clauses, variables));
   occurrences = calloc(1 + 2 * (size_t)variables, sizeof *occurrences);
   if (!occurrences)
     die("failed to allocate occurrences array");
   occurrences += variables;
-  int last = 0, lit, parsed = 0;
-  while (read(&lit)) {
-    if (lit) {
-      if (parsed >= clauses)
-	err("too many clauses");
-      if (abs(lit) > variables)
-	err("literal '%d' exceeds variables", lit);
-      occurrences[lit]++;
-      literals++;
-    } else
-      clauses++;
-    last = lit;
+  {
+    int lit = 0, parsed = 0;
+    while (next_int(&lit)) {
+      if (lit) {
+	if (parsed >= clauses)
+	  err("too many clauses");
+	if (abs(lit) > variables)
+	  err("literal '%d' exceeds variables", lit);
+	occurrences[lit]++;
+	literals++;
+      } else
+	parsed++;
+    }
+    if (lit)
+      err("terminating zero missing");
+    if (parsed < clauses)
+      err("clause missing");
   }
-  if (!last)
-    err("terminating zero missing");
-  if (parsed < clauses)
-    ;
-  err("clause missing");
   if (close_file)
     fclose(file);
-  msg("parsed %zu bytes", bytes);
-  msg("found %ld literals", literals);
-  msg("clause variable ratio %.3f", average(clauses, variables));
-  msg("average clause size of %3.f literals per clause",
+  msg("lines %ld", lineno);
+  msg("bytes %zu", bytes);
+  msg("literals %zu", literals);
+  msg("average-clause-size %.3f",
       average(literals, clauses));
   long max_one_sided = 0;
   for (int lit = -variables; lit <= variables; lit++) {
@@ -180,15 +179,15 @@ int main(int argc, char **argv) {
     if (one_sided > max_one_sided)
       max_one_sided = one_sided;
   }
-  msg("maximum occurrence %ld of literal", max_one_sided);
+  msg("maximum-literal-occurrence %ld", max_one_sided);
   long max_two_sided = 0;
   for (int idx = 1; idx <= variables; idx++) {
-    long two_sided = occurrences[lit];
-    two_sided += occurrences[-lit];
+    long two_sided = occurrences[idx];
+    two_sided += occurrences[-idx];
     if (two_sided > max_two_sided)
       max_two_sided = two_sided;
   }
-  msg("maximum occurrence %ld of variable", max_two_sided);
+  msg("maximum-variable-occurrence %ld", max_two_sided);
   occurrences -= variables;
   free(occurrences);
   return 0;
