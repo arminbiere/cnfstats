@@ -25,6 +25,7 @@ COMPILE="gcc -Wall"
 [ $debug = no ] && COMPILE="$COMPILE -O3"
 [ $symbols = yes ] && COMPILE="$COMPILE -g"
 [ $check = no ] && COMPILE="$COMPILE -DNDEBUG"
+echo "configure: $COMPILE"
 rm -f makefile
 sed -e "s#@COMPILE@#$COMPILE#" makefile.in > makefile
-echo $COMPILE
+echo "configure: generated 'makefile' (run 'make test')"

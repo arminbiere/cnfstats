@@ -16,11 +16,12 @@ static void die(const char *msg, ...) {
   fputc('\n', stderr);
   exit(1);
 }
+
 static long lineno;
 static const char *name;
 
 static void err(const char *msg, ...) {
-  fprintf(stderr, "cnfstats: parse error: line %ld in '%s': ", lineno, name);
+  fprintf(stderr, "cnfstats: parse error: at line %ld in '%s': ", lineno, name);
   va_list ap;
   va_start(ap, msg);
   vfprintf(stderr, msg, ap);
@@ -29,7 +30,6 @@ static void err(const char *msg, ...) {
   exit(1);
 }
 
-static bool close_file;
 static FILE *file;
 static long bytes;
 
@@ -77,8 +77,8 @@ static bool read(int *res_ptr) {
     res += digit;
   }
   res *= sign;
-  if (ch != ' ' || ch != '\t' || ch != '\n')
-    err("expected space after '%d'", res);
+  if (ch != EOF && ch != ' ' && ch != '\t' && ch != '\n')
+    err("unexpected character 0x%02x after '%d'", res);
   *res_ptr = res;
   return true;
 }
@@ -100,6 +100,7 @@ static void msg(const char *msg, ...) {
 
 static double average(double a, double b) { return b ? a / b : 0; }
 
+
 int main(int argc, char **argv) {
   for (int i = 1; i != argc; i++) {
     const char *arg = argv[i];
@@ -113,6 +114,7 @@ int main(int argc, char **argv) {
       die("two file arguments '%s' and '%s'", name, arg);
     name = arg;
   }
+  bool close_file = false;
   if (!name)
     file = stdin, name = "<stdin>";
   else if (!(file = fopen(name, "r")))

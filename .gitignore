@@ -1,2 +1,4 @@
 cnfstats
 makefile
+*.err
+*.log
