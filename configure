@@ -1,0 +1,30 @@
+#!/bin/sh
+debug=no
+symbols=unknown
+check=unknown
+while [ $# -gt 0 ]
+do
+  case "$1" in
+    -h)
+      echo "usage: configure [-h|-g|-c|-s]"
+      exit 1
+      ;;
+    -g) debug=yes;;
+    -s) symbols=yes;;
+    -c) check=yes;;
+    *)
+      echo "configure: error: invalid option '$1' (try '-h')" 1>&2
+      exit 1
+      ;;
+  esac
+  shift
+done
+COMPILE="gcc -Wall"
+[ $symbols = unknown ] && symbols=$debug
+[ $check = unknown ] && check=$debug
+[ $debug = no ] && COMPILE="$COMPILE -O3"
+[ $symbols = yes ] && COMPILE="$COMPILE -g"
+[ $check = no ] && COMPILE="$COMPILE -DNDEBUG"
+rm -f makefile
+sed -e "s#@COMPILE@#$COMPILE#" makefile.in > makefile
+echo $COMPILE

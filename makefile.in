@@ -1,0 +1,5 @@
+all:
+	@COMPILE@ -o cnfstats cnfstats.c
+clean:
+	rm -f cnfstats makefile
+.PHONY: all clean
