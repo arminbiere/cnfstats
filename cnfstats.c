@@ -7,6 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void die(const char *,...) __attribute__ ((format (printf, 1, 2)));
+
 static void die(const char *msg, ...) {
   fputs("cnfstats: error: ", stderr);
   va_list ap;
@@ -19,6 +21,8 @@ static void die(const char *msg, ...) {
 
 static long lineno = 0;
 static const char *name;
+
+static void err(const char *,...) __attribute__ ((format (printf, 1, 2)));
 
 static void err(const char *msg, ...) {
   fprintf(stderr, "cnfstats: parse error: at line %ld in '%s': ", lineno + 1,
@@ -79,15 +83,19 @@ static bool next_int(int *res_ptr) {
   }
   res *= sign;
   if (ch != EOF && ch != ' ' && ch != '\t' && ch != '\n')
-    err("unexpected character 0x%02x after '%d'", res);
+    err("unexpected character 0x%02x after '%d'", ch, res);
   *res_ptr = res;
   return true;
 }
 
 static int variables;
 static int clauses;
+static int sizes[10];
+static int log10sizes[11];
 static long literals;
 static long *occurrences;
+
+static void msg(const char *,...) __attribute__ ((format (printf, 1, 2)));
 
 static void msg(const char *msg, ...) {
   fputs("cnfstats ", stdout);
@@ -101,8 +109,28 @@ static void msg(const char *msg, ...) {
 
 static double average(double a, double b) { return b ? a / b : 0; }
 
+static double percent(double a, double b) { return average(100 * a, b); }
+
+// clang-format off
+
+static int intlog10(int n) {
+  if (n <= 1) return 0;
+  if (n <= 10) return 1;
+  if (n <= 100) return 2;
+  if (n <= 1000) return 3;
+  if (n <= 10000) return 4;
+  if (n <= 100000) return 5;
+  if (n <= 1000000) return 6;
+  if (n <= 10000000) return 7;
+  if (n <= 100000000) return 8;
+  if (n <= 1000000000) return 9;
+  return 10;
+}
+
+// clang-format on
+
 int main(int argc, char **argv) {
-  msg ("version 0.0");
+  msg("version 0.0");
   for (int i = 1; i != argc; i++) {
     const char *arg = argv[i];
     if (!strcmp(arg, "-h")) {
@@ -149,7 +177,7 @@ int main(int argc, char **argv) {
     die("failed to allocate occurrences array");
   occurrences += variables;
   {
-    int lit = 0, parsed = 0;
+    int lit = 0, parsed = 0, size = 0;
     while (next_int(&lit)) {
       if (lit) {
 	if (parsed >= clauses)
@@ -158,8 +186,14 @@ int main(int argc, char **argv) {
 	  err("literal '%d' exceeds variables", lit);
 	occurrences[lit]++;
 	literals++;
-      } else
+	size++;
+      } else {
 	parsed++;
+	if (size < 10)
+	  sizes[size]++;
+	log10sizes[intlog10(size)]++;
+	size = 0;
+      }
     }
     if (lit)
       err("terminating zero missing");
@@ -171,8 +205,7 @@ int main(int argc, char **argv) {
   msg("lines %ld", lineno);
   msg("bytes %zu", bytes);
   msg("literals %zu", literals);
-  msg("average-clause-size %.3f",
-      average(literals, clauses));
+  msg("average-clause-size %.3f", average(literals, clauses));
   long max_one_sided = 0;
   for (int lit = -variables; lit <= variables; lit++) {
     long one_sided = occurrences[lit];
@@ -190,5 +223,13 @@ int main(int argc, char **argv) {
   msg("maximum-variable-occurrence %ld", max_two_sided);
   occurrences -= variables;
   free(occurrences);
+  for (int i = 0; i != 10; i++)
+    if (sizes[i])
+      msg("sizes[%d] %d %.2f%%", i, sizes[i], percent(sizes[i], clauses));
+
+  for (int i = 0; i != 11; i++)
+    if (log10sizes[i])
+      msg("log10sizes[%d] %d %.2f%%", i, log10sizes[i],
+	  percent(log10sizes[i], clauses));
   return 0;
 }
