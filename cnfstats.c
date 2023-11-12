@@ -90,12 +90,14 @@ static bool next_int(int *res_ptr) {
 
 static int variables;
 static int clauses;
-static int sizes[10];
+static int counts[10];
 static int largest_size = -1;
 static int smallest_size = -1;
 static int log10sizes[11];
 static long literals;
+
 static long *occurrences;
+static long *sizes;
 
 // clang-format off
 
@@ -113,6 +115,22 @@ static int intlog10(int n) {
   return 10;
 }
 
+static int intexp10(int n) {
+  switch (n) {
+    case 0: return 1;
+    case 1: return 10;
+    case 2: return 100;
+    case 3: return 1000;
+    case 4: return 10000;
+    case 5: return 100000;
+    case 6: return 1000000;
+    case 7: return 10000000;
+    case 8: return 100000000;
+    case 9: return 1000000000;
+    default: return INT_MAX;
+  }
+}
+
 // clang-format on
 
 static void parse(void) {
@@ -127,9 +145,9 @@ static void parse(void) {
       literals++;
       size++;
     } else {
-      parsed++;
+      sizes[parsed++] = size;
       if (size < 10)
-	sizes[size]++;
+	counts[size]++;
       if (smallest_size < 0 || size < smallest_size)
 	smallest_size = size;
       if (largest_size < 0 || size > largest_size)
@@ -156,6 +174,14 @@ static void msg(const char *msg, ...) {
   fflush(stdout);
 }
 
+static FILE *open_pipe(const char *fmt, const char *path) {
+  char *cmd = malloc(strlen(fmt) + strlen(path));
+  sprintf(cmd, fmt, path);
+  FILE *res = popen(cmd, "r");
+  free(cmd);
+  return res;
+}
+
 static double average(double a, double b) { return b ? a / b : 0; }
 
 static double percent(double a, double b) { return average(100 * a, b); }
@@ -165,12 +191,8 @@ static bool match(const char *str, char *suffix) {
   return k <= l && !strcmp(str + l - k, suffix);
 }
 
-static FILE *open_pipe(const char *fmt, const char *path) {
-  char *cmd = malloc(strlen(fmt) + strlen(path));
-  sprintf(cmd, fmt, path);
-  FILE *res = popen(cmd, "r");
-  free(cmd);
-  return res;
+static int qsort_cmp_size(const void *p, const void *q) {
+  return *(long *)p - *(long *)q;
 }
 
 int main(int argc, char **argv) {
@@ -226,6 +248,7 @@ int main(int argc, char **argv) {
   occurrences = calloc(1 + 2 * (size_t)variables, sizeof *occurrences);
   if (!occurrences)
     die("failed to allocate occurrences array");
+  sizes = malloc(clauses * sizeof *sizes);
   occurrences += variables;
   parse();
   if (close_file)
@@ -235,7 +258,6 @@ int main(int argc, char **argv) {
   msg("lines %ld", lineno);
   msg("bytes %zu", bytes);
   msg("literals %zu", literals);
-  msg("average-clause-size %.3f", average(literals, clauses));
   long max_one_sided = 0;
   for (int lit = -variables; lit <= variables; lit++) {
     long one_sided = occurrences[lit];
@@ -255,14 +277,32 @@ int main(int argc, char **argv) {
   free(occurrences);
   if (smallest_size > 0)
     msg("smallest-size %d", smallest_size);
+  if (clauses) {
+    qsort(sizes, clauses, sizeof *sizes, qsort_cmp_size);
+    if (clauses & 1)
+      msg("median-size %ld", sizes[clauses / 2]);
+    else {
+      long lower = sizes[clauses/2];
+      long upper = sizes[clauses/2 + 1];
+      if (lower == upper)
+	msg("median-size %ld", lower);
+      else {
+	double median_size = (lower + upper)/2;
+	msg("median-size %.3f", median_size);
+      }
+    }
+    double average_size = average(literals, clauses);
+    msg("average-size %.3f", average_size);
+  }
+  free(sizes);
   if (largest_size > 0)
     msg("largest-size %d", largest_size);
   for (int i = 0; i != 10; i++)
-    if (sizes[i])
-      msg("sizes[%d] %d %.2f%%", i, sizes[i], percent(sizes[i], clauses));
-  for (int i = 0; i != 11; i++)
+    if (counts[i])
+      msg("sizes[%d] %d %.2f%%", i, counts[i], percent(counts[i], clauses));
+  for (int i = 1; i != 11; i++)
     if (log10sizes[i])
-      msg("log10sizes[%d] %d %.2f%%", i, log10sizes[i],
-	  percent(log10sizes[i], clauses));
+      msg("log10[%d] %d %.2f%% [%d..%d]", i, log10sizes[i],
+	  percent(log10sizes[i], clauses), intexp10(i - 1) + 1, intexp10(i));
   return 0;
 }
