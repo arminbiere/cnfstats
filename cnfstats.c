@@ -274,26 +274,28 @@ int main(int argc, char **argv) {
   }
   msg("maximum-variable-occurrence %ld", max_two_sided);
   occurrences -= variables;
-  free(occurrences);
   if (smallest_size > 0)
     msg("smallest-size %d", smallest_size);
   if (clauses) {
     qsort(sizes, clauses, sizeof *sizes, qsort_cmp_size);
-    if (clauses & 1)
-      msg("median-size %ld", sizes[clauses / 2]);
-    else {
+    if (clauses & 1) {
+      long median = sizes[clauses / 2];
+      msg("median-size %ld #%d", median, counts[median]);
+    } else {
       long lower = sizes[clauses/2];
       long upper = sizes[clauses/2 + 1];
       if (lower == upper)
-	msg("median-size %ld", lower);
+	msg("median-size %ld #%d", lower, counts[lower]);
       else {
-	double median_size = (lower + upper)/2;
-	msg("median-size %.3f", median_size);
+	double median_size = (lower + upper)/2.0;
+	double average_count = (counts[lower] + counts[upper])/2.0;
+	msg("median-size %.1f #%.2f", median_size, average_count);
       }
     }
     double average_size = average(literals, clauses);
     msg("average-size %.3f", average_size);
   }
+  free(occurrences);
   free(sizes);
   if (largest_size > 0)
     msg("largest-size %d", largest_size);
