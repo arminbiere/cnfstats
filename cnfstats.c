@@ -260,7 +260,6 @@ int main(int argc, char **argv) {
   for (int i = 0; i != 10; i++)
     if (sizes[i])
       msg("sizes[%d] %d %.2f%%", i, sizes[i], percent(sizes[i], clauses));
-
   for (int i = 0; i != 11; i++)
     if (log10sizes[i])
       msg("log10sizes[%d] %d %.2f%%", i, log10sizes[i],
