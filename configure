@@ -2,16 +2,18 @@
 debug=no
 symbols=unknown
 check=unknown
+options=""
 while [ $# -gt 0 ]
 do
   case "$1" in
     -h)
-      echo "usage: configure [-h|-g|-c|-s]"
+      echo "usage: configure [-h|-g|-c|-s|-a]"
       exit 1
       ;;
     -g) debug=yes;;
     -s) symbols=yes;;
     -c) check=yes;;
+    -a) options="$options -fsanitize=address";;
     *)
       echo "configure: error: invalid option '$1' (try '-h')" 1>&2
       exit 1
@@ -24,6 +26,7 @@ COMPILE="gcc -Wall"
 [ $check = unknown ] && check=$debug
 [ $debug = no ] && COMPILE="$COMPILE -O3"
 [ $symbols = yes ] && COMPILE="$COMPILE -g"
+COMPILE="$COMPILE$options"
 [ $check = no ] && COMPILE="$COMPILE -DNDEBUG"
 echo "configure: will compile with '$COMPILE'"
 rm -f makefile

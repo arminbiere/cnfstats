@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static void die(const char *,...) __attribute__ ((format (printf, 1, 2)));
+static void die(const char *, ...) __attribute__((format(printf, 1, 2)));
 
 static void die(const char *msg, ...) {
   fputs("cnfstats: error: ", stderr);
@@ -22,7 +22,7 @@ static void die(const char *msg, ...) {
 static long lineno = 0;
 static const char *name;
 
-static void err(const char *,...) __attribute__ ((format (printf, 1, 2)));
+static void err(const char *, ...) __attribute__((format(printf, 1, 2)));
 
 static void err(const char *msg, ...) {
   fprintf(stderr, "cnfstats: parse error: at line %ld in '%s': ", lineno + 1,
@@ -91,25 +91,11 @@ static bool next_int(int *res_ptr) {
 static int variables;
 static int clauses;
 static int sizes[10];
+static int largest_size = -1;
+static int smallest_size = -1;
 static int log10sizes[11];
 static long literals;
 static long *occurrences;
-
-static void msg(const char *,...) __attribute__ ((format (printf, 1, 2)));
-
-static void msg(const char *msg, ...) {
-  fputs("cnfstats ", stdout);
-  va_list ap;
-  va_start(ap, msg);
-  vprintf(msg, ap);
-  va_end(ap);
-  fputc('\n', stdout);
-  fflush(stdout);
-}
-
-static double average(double a, double b) { return b ? a / b : 0; }
-
-static double percent(double a, double b) { return average(100 * a, b); }
 
 // clang-format off
 
@@ -129,8 +115,66 @@ static int intlog10(int n) {
 
 // clang-format on
 
+static void parse(void) {
+  int lit = 0, parsed = 0, size = 0;
+  while (next_int(&lit)) {
+    if (lit) {
+      if (parsed >= clauses)
+	err("too many clauses");
+      if (abs(lit) > variables)
+	err("literal '%d' exceeds variables", lit);
+      occurrences[lit]++;
+      literals++;
+      size++;
+    } else {
+      parsed++;
+      if (size < 10)
+	sizes[size]++;
+      if (smallest_size < 0 || size < smallest_size)
+	smallest_size = size;
+      if (largest_size < 0 || size > largest_size)
+	largest_size = size;
+      log10sizes[intlog10(size)]++;
+      size = 0;
+    }
+  }
+  if (lit)
+    err("terminating zero missing");
+  if (parsed < clauses)
+    err("clause missing");
+}
+
+static void msg(const char *, ...) __attribute__((format(printf, 1, 2)));
+
+static void msg(const char *msg, ...) {
+  fputs("cnfstats ", stdout);
+  va_list ap;
+  va_start(ap, msg);
+  vprintf(msg, ap);
+  va_end(ap);
+  fputc('\n', stdout);
+  fflush(stdout);
+}
+
+static double average(double a, double b) { return b ? a / b : 0; }
+
+static double percent(double a, double b) { return average(100 * a, b); }
+
+static bool match(const char *str, char *suffix) {
+  size_t l = strlen(str), k = strlen(suffix);
+  return k <= l && !strcmp(str + l - k, suffix);
+}
+
+static FILE *open_pipe(const char *fmt, const char *path) {
+  char *cmd = malloc(strlen(fmt) + strlen(path));
+  sprintf(cmd, fmt, path);
+  FILE *res = popen(cmd, "r");
+  free(cmd);
+  return res;
+}
+
 int main(int argc, char **argv) {
-  msg("version 0.0");
+  msg("version 0.0.1");
   for (int i = 1; i != argc; i++) {
     const char *arg = argv[i];
     if (!strcmp(arg, "-h")) {
@@ -144,12 +188,19 @@ int main(int argc, char **argv) {
     name = arg;
   }
   bool close_file = false;
+  bool pclose_file = false;
   if (!name)
     file = stdin, name = "<stdin>";
-  else if (!(file = fopen(name, "r")))
-    die("could not open and next_int '%s'", name);
+  else if (match(name, ".xz"))
+    file = open_pipe("xz -c -d %s", name), pclose_file = true;
+  else if (match(name, ".gz"))
+    file = open_pipe("gunzip -c -d %s", name), pclose_file = true;
+  else if (match(name, ".bz2"))
+    file = open_pipe("bunzip2 -c -d %s", name), pclose_file = true;
   else
-    close_file = true;
+    file = fopen(name, "r"), close_file = true;
+  if (!file)
+    die("could not open and read '%s'", name);
   msg("cnf %s", name);
   int ch = next_char();
   while (ch == 'c') {
@@ -176,32 +227,11 @@ int main(int argc, char **argv) {
   if (!occurrences)
     die("failed to allocate occurrences array");
   occurrences += variables;
-  {
-    int lit = 0, parsed = 0, size = 0;
-    while (next_int(&lit)) {
-      if (lit) {
-	if (parsed >= clauses)
-	  err("too many clauses");
-	if (abs(lit) > variables)
-	  err("literal '%d' exceeds variables", lit);
-	occurrences[lit]++;
-	literals++;
-	size++;
-      } else {
-	parsed++;
-	if (size < 10)
-	  sizes[size]++;
-	log10sizes[intlog10(size)]++;
-	size = 0;
-      }
-    }
-    if (lit)
-      err("terminating zero missing");
-    if (parsed < clauses)
-      err("clause missing");
-  }
+  parse();
   if (close_file)
     fclose(file);
+  if (pclose_file)
+    pclose(file);
   msg("lines %ld", lineno);
   msg("bytes %zu", bytes);
   msg("literals %zu", literals);
@@ -223,6 +253,10 @@ int main(int argc, char **argv) {
   msg("maximum-variable-occurrence %ld", max_two_sided);
   occurrences -= variables;
   free(occurrences);
+  if (smallest_size > 0)
+    msg("smallest-size %d", smallest_size);
+  if (largest_size > 0)
+    msg("largest-size %d", largest_size);
   for (int i = 0; i != 10; i++)
     if (sizes[i])
       msg("sizes[%d] %d %.2f%%", i, sizes[i], percent(sizes[i], clauses));
