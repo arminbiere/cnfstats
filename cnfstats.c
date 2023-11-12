@@ -93,6 +93,8 @@ static int clauses;
 static int counts[10];
 static int largest_size = -1;
 static int smallest_size = -1;
+static int count_largest_size = 0;
+static int count_smallest_size = 0;
 static int log10sizes[11];
 static long literals;
 
@@ -149,9 +151,13 @@ static void parse(void) {
       if (size < 10)
 	counts[size]++;
       if (smallest_size < 0 || size < smallest_size)
-	smallest_size = size;
+	smallest_size = size, count_smallest_size = 1;
+      else if (size == smallest_size)
+	count_smallest_size++;
       if (largest_size < 0 || size > largest_size)
-	largest_size = size;
+	largest_size = size, count_largest_size = 1;
+      else if (size == largest_size)
+	count_largest_size++;
       log10sizes[intlog10(size)]++;
       size = 0;
     }
@@ -275,20 +281,20 @@ int main(int argc, char **argv) {
   msg("maximum-variable-occurrence %ld", max_two_sided);
   occurrences -= variables;
   if (smallest_size > 0)
-    msg("smallest-size %d", smallest_size);
+    msg("smallest-size %d #%d", smallest_size, count_smallest_size);
   if (clauses) {
     qsort(sizes, clauses, sizeof *sizes, qsort_cmp_size);
     if (clauses & 1) {
       long median = sizes[clauses / 2];
       msg("median-size %ld #%d", median, counts[median]);
     } else {
-      long lower = sizes[clauses/2];
-      long upper = sizes[clauses/2 + 1];
+      long lower = sizes[clauses / 2];
+      long upper = sizes[clauses / 2 + 1];
       if (lower == upper)
 	msg("median-size %ld #%d", lower, counts[lower]);
       else {
-	double median_size = (lower + upper)/2.0;
-	double average_count = (counts[lower] + counts[upper])/2.0;
+	double median_size = (lower + upper) / 2.0;
+	double average_count = (counts[lower] + counts[upper]) / 2.0;
 	msg("median-size %.1f #%.2f", median_size, average_count);
       }
     }
@@ -298,7 +304,7 @@ int main(int argc, char **argv) {
   free(occurrences);
   free(sizes);
   if (largest_size > 0)
-    msg("largest-size %d", largest_size);
+    msg("largest-size %d #%d", largest_size, count_largest_size);
   for (int i = 0; i != 10; i++)
     if (counts[i])
       msg("sizes[%d] %d %.2f%%", i, counts[i], percent(counts[i], clauses));
