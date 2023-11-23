@@ -93,7 +93,7 @@ static int clauses;
 static int counts[10];
 static int largest_size = -1;
 static int smallest_size = -1;
-static int count_largest_size = 0;
+static int count_largest_size = -1;
 static int count_smallest_size = 0;
 static int log10sizes[11];
 static long literals;
@@ -145,7 +145,8 @@ static void parse(void) {
 	err("literal '%d' exceeds variables", lit);
       occurrences[lit]++;
       literals++;
-      size++;
+      if (size < INT_MAX)
+	size++;
     } else {
       sizes[parsed++] = size;
       if (size < 10)
@@ -280,7 +281,7 @@ int main(int argc, char **argv) {
   }
   msg("maximum-variable-occurrence %ld", max_two_sided);
   occurrences -= variables;
-  if (smallest_size > 0)
+  if (smallest_size >= 0)
     msg("smallest-size %d #%d", smallest_size, count_smallest_size);
   if (clauses) {
     qsort(sizes, clauses, sizeof *sizes, qsort_cmp_size);
