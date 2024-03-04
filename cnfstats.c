@@ -169,10 +169,13 @@ static void parse(void) {
     err("clause missing");
 }
 
+static const char * prefix = "cnfstats";
+
 static void msg(const char *, ...) __attribute__((format(printf, 1, 2)));
 
 static void msg(const char *msg, ...) {
-  fputs("cnfstats ", stdout);
+  fputs (prefix, stdout);
+  fputc (' ', stdout);
   va_list ap;
   va_start(ap, msg);
   vprintf(msg, ap);
@@ -203,12 +206,18 @@ static int qsort_cmp_size(const void *p, const void *q) {
 }
 
 int main(int argc, char **argv) {
-  msg("version 0.0.1");
+  msg("version 0.0.2");
   for (int i = 1; i != argc; i++) {
     const char *arg = argv[i];
     if (!strcmp(arg, "-h")) {
-      printf("usage: cnfstats [-h] [ <cnf> ]\n");
+      printf("usage: cnfstats [-h] [ -p <prefix> [ <cnf> ]\n");
       exit(0);
+    }
+    if (!strcmp (arg, "-p")) {
+      if (++i == argc)
+	die ("argument to '-p' missing");
+      prefix = argv[i];
+      continue;
     }
     if (arg[0] == '-')
       die("invalid argument '%s' (try '-h')", arg);
