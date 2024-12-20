@@ -97,6 +97,7 @@ static int count_largest_size = -1;
 static int count_smallest_size = 0;
 static int log10sizes[11];
 static long literals;
+static long sum_of_squares_of_clause_sizes;
 
 static long *occurrences;
 static long *sizes;
@@ -160,6 +161,7 @@ static void parse(void) {
       else if (size == largest_size)
 	count_largest_size++;
       log10sizes[intlog10(size)]++;
+      sum_of_squares_of_clause_sizes += (long) size * size;
       size = 0;
     }
   }
@@ -169,13 +171,13 @@ static void parse(void) {
     err("clause missing");
 }
 
-static const char * prefix = "cnfstats";
+static const char *prefix = "cnfstats";
 
 static void msg(const char *, ...) __attribute__((format(printf, 1, 2)));
 
 static void msg(const char *msg, ...) {
-  fputs (prefix, stdout);
-  fputc (' ', stdout);
+  fputs(prefix, stdout);
+  fputc(' ', stdout);
   va_list ap;
   va_start(ap, msg);
   vprintf(msg, ap);
@@ -213,9 +215,9 @@ int main(int argc, char **argv) {
       printf("usage: cnfstats [-h] [ -p <prefix> [ <cnf> ]\n");
       exit(0);
     }
-    if (!strcmp (arg, "-p")) {
+    if (!strcmp(arg, "-p")) {
       if (++i == argc)
-	die ("argument to '-p' missing");
+	die("argument to '-p' missing");
       prefix = argv[i];
       continue;
     }
@@ -310,6 +312,7 @@ int main(int argc, char **argv) {
     }
     double average_size = average(literals, clauses);
     msg("average-size %.3f", average_size);
+    msg("sum-of-size-squares %ld", sum_of_squares_of_clause_sizes);
   }
   free(occurrences);
   free(sizes);
