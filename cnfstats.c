@@ -26,7 +26,7 @@ static void err(const char *, ...) __attribute__((format(printf, 1, 2)));
 
 static void err(const char *msg, ...) {
   fprintf(stderr, "cnfstats: parse error: at line %ld in '%s': ", lineno + 1,
-	  name);
+          name);
   va_list ap;
   va_start(ap, msg);
   vfprintf(stderr, msg, ap);
@@ -96,11 +96,17 @@ static int smallest_size = -1;
 static int count_largest_size = -1;
 static int count_smallest_size = 0;
 static int log10sizes[11];
-static long literals;
+static long literals, duplicated, clashing;
 static long sum_of_squares_of_clause_sizes;
 
 static long *occurrences;
+static signed char *marks;
 static long *sizes;
+
+struct {
+  int *literals;
+  size_t size, capacity;
+} clause;
 
 // clang-format off
 
@@ -141,27 +147,44 @@ static void parse(void) {
   while (next_int(&lit)) {
     if (lit) {
       if (parsed >= clauses)
-	err("too many clauses");
+        err("too many clauses");
       if (abs(lit) > variables)
-	err("literal '%d' exceeds variables", lit);
+        err("literal '%d' exceeds variables", lit);
       occurrences[lit]++;
       literals++;
       if (size < INT_MAX)
-	size++;
+        size++;
+      if (clause.size == clause.capacity) {
+        size_t new_capacity = clause.capacity ? 2 * clause.capacity : 1;
+        size_t new_bytes = new_capacity * sizeof *clause.literals;
+        clause.literals = realloc (clause.literals, new_bytes);
+        if (!clause.literals)
+          die("failed to reallocate clause literals array");
+        clause.capacity = new_capacity;
+      }
+      clause.literals[clause.size++] = lit;
+      if (marks[lit])
+        duplicated++;
+      else if (marks[-lit])
+        clashing++;
+      marks[lit] = 1;
     } else {
+      for (size_t i = 0; i != clause.size; i++)
+        marks[clause.literals[i]] = 0;
+      clause.size = 0;
       sizes[parsed++] = size;
       if (size < 10)
-	counts[size]++;
+        counts[size]++;
       if (smallest_size < 0 || size < smallest_size)
-	smallest_size = size, count_smallest_size = 1;
+        smallest_size = size, count_smallest_size = 1;
       else if (size == smallest_size)
-	count_smallest_size++;
+        count_smallest_size++;
       if (largest_size < 0 || size > largest_size)
-	largest_size = size, count_largest_size = 1;
+        largest_size = size, count_largest_size = 1;
       else if (size == largest_size)
-	count_largest_size++;
+        count_largest_size++;
       log10sizes[intlog10(size)]++;
-      sum_of_squares_of_clause_sizes += (long) size * size;
+      sum_of_squares_of_clause_sizes += (long)size * size;
       size = 0;
     }
   }
@@ -217,7 +240,7 @@ int main(int argc, char **argv) {
     }
     if (!strcmp(arg, "-p")) {
       if (++i == argc)
-	die("argument to '-p' missing");
+        die("argument to '-p' missing");
       prefix = argv[i];
       continue;
     }
@@ -246,7 +269,7 @@ int main(int argc, char **argv) {
   while (ch == 'c') {
     while ((ch = next_char()) != '\n')
       if (ch == EOF)
-	err("unexpected end-of-line in comment");
+        err("unexpected end-of-line in comment");
     ch = next_char();
   }
   if (ch != 'p' || next_char() != ' ' || next_char() != 'c' ||
@@ -266,9 +289,14 @@ int main(int argc, char **argv) {
   occurrences = calloc(1 + 2 * (size_t)variables, sizeof *occurrences);
   if (!occurrences)
     die("failed to allocate occurrences array");
+  marks = calloc(1 + 2 * (size_t)variables, sizeof *marks);
+  if (!marks)
+    die("failed to allocate marks arrays");
   sizes = malloc(clauses * sizeof *sizes);
   occurrences += variables;
+  marks += variables;
   parse();
+  free(clause.literals);
   if (close_file)
     fclose(file);
   if (pclose_file)
@@ -276,6 +304,8 @@ int main(int argc, char **argv) {
   msg("lines %ld", lineno);
   msg("bytes %zu", bytes);
   msg("literals %zu", literals);
+  msg("clashing %zu", clashing);
+  msg("duplicated %zu", duplicated);
   long max_one_sided = 0;
   for (int lit = -variables; lit <= variables; lit++) {
     long one_sided = occurrences[lit];
@@ -303,11 +333,11 @@ int main(int argc, char **argv) {
       long lower = sizes[clauses / 2];
       long upper = sizes[clauses / 2 + 1];
       if (lower == upper)
-	msg("median-size %ld #%d", lower, counts[lower]);
+        msg("median-size %ld #%d", lower, counts[lower]);
       else {
-	double median_size = (lower + upper) / 2.0;
-	double average_count = (counts[lower] + counts[upper]) / 2.0;
-	msg("median-size %.1f #%.2f", median_size, average_count);
+        double median_size = (lower + upper) / 2.0;
+        double average_count = (counts[lower] + counts[upper]) / 2.0;
+        msg("median-size %.1f #%.2f", median_size, average_count);
       }
     }
     double average_size = average(literals, clauses);
@@ -315,6 +345,8 @@ int main(int argc, char **argv) {
     msg("sum-of-size-squares %ld", sum_of_squares_of_clause_sizes);
   }
   free(occurrences);
+  marks -= variables;
+  free(marks);
   free(sizes);
   if (largest_size > 0)
     msg("largest-size %d #%d", largest_size, count_largest_size);
@@ -324,6 +356,6 @@ int main(int argc, char **argv) {
   for (int i = 1; i != 11; i++)
     if (log10sizes[i])
       msg("log10[%d] %d %.2f%% [%d..%d]", i, log10sizes[i],
-	  percent(log10sizes[i], clauses), intexp10(i - 1) + 1, intexp10(i));
+          percent(log10sizes[i], clauses), intexp10(i - 1) + 1, intexp10(i));
   return 0;
 }
